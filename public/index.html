@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TerpBites</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand">TerpBites <span>What's in the dining hall right now</span></div>
+    <nav id="halls" class="halls" role="tablist"></nav>
+  </header>
+
+  <main>
+    <section class="now">
+      <div id="now-text" class="now-text">Loading…</div>
+      <div id="meals" class="meals"></div>
+      <input id="search" class="search" type="search" placeholder="Search this menu…">
+    </section>
+    <div id="menu" class="menu"></div>
+  </main>
+
+  <dialog id="food">
+    <form method="dialog"><button class="close" aria-label="Close">×</button></form>
+    <div id="food-body"></div>
+  </dialog>
+
+  <script src="app.js"></script>
+</body>
+</html>
