@@ -7,7 +7,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { HALLS, getMenu, currentMeal, isAllowedDate } = require('./scraper');
-const { q, summary } = require('./db');
+const { db, q, summary, photoUrl } = require('./db');
 const { issueClientId, verifyClientId, ipHash, authorTag, isAdmin } = require('./security');
 
 const app = express();
@@ -39,7 +39,8 @@ app.use('/api', limit(15, 300, 'Too many requests, slow down a bit'));
 const sessionLimit = limit(60, 10, 'Too many new sessions from your network, try again later');
 const rateLimitVotes = limit(10, 60, 'Too many ratings, try again in a few minutes');
 const commentLimit = limit(10, 10, 'Too many comments, try again in a few minutes');
-const photoLimit = limit(60, 10, 'Too many uploads, try again later');
+const photoLimit = limit(60, 10, 'Too many photo uploads, try again later');
+const upvoteLimit = limit(10, 100, 'Too many upvotes, try again in a few minutes');
 const adminLimit = limit(15, 30, 'Too many admin attempts, try again later');
 
 // Device ids are signed by the server, so they can't be invented to stuff votes.
@@ -71,10 +72,30 @@ const upload = multer({
   limits: { fileSize: 8 * 1024 * 1024, files: 1, fields: 5 },
 });
 
-const publicComments = (foodId) => q.comments.all(foodId).map((c) => ({
-  id: c.id, author: c.author, tag: authorTag(c.client_id), body: c.body, created_at: c.created_at,
+const publicComments = (foodId, clientId) => q.comments.all(clientId, foodId).map((c) => ({
+  id: c.id,
+  author: c.author,
+  tag: authorTag(c.client_id),
+  body: c.body,
+  photo: photoUrl(c.photo),
+  votes: c.votes,
+  myVote: Boolean(c.myVote),
+  mine: c.client_id === clientId,
+  created_at: c.created_at,
 }));
-const publicPhotos = (foodId) => q.photos.all(foodId).map((p) => ({ id: p.id, url: `/uploads/${p.filename}`, created_at: p.created_at }));
+
+// Decode and re-encode: rejects anything that isn't really an image and drops EXIF/GPS metadata.
+async function savePhoto(buffer) {
+  const filename = `${crypto.randomUUID()}.jpg`;
+  await sharp(buffer, { limitInputPixels: 40_000_000, animated: false })
+    .rotate()
+    .resize(1600, 1600, { fit: 'inside', withoutEnlargement: true })
+    .jpeg({ quality: 80, mozjpeg: true })
+    .toFile(path.join(UPLOADS, filename));
+  return filename;
+}
+
+const removePhotoFile = (filename) => filename && fs.rm(path.join(UPLOADS, path.basename(filename)), { force: true }, () => {});
 
 app.post('/api/session', sessionLimit, (req, res) => res.json({ clientId: issueClientId() }));
 
@@ -107,7 +128,7 @@ app.get('/api/menu', clientId, async (req, res) => {
 
 app.get('/api/food/:id', clientId, knownFood, (req, res) => {
   const id = req.food.id;
-  res.json({ ...req.food, ...summary(id, req.clientId), comments: publicComments(id), photos: publicPhotos(id) });
+  res.json({ ...req.food, ...summary(id, req.clientId), comments: publicComments(id, req.clientId) });
 });
 
 app.post('/api/food/:id/rating', rateLimitVotes, clientId, knownFood, (req, res) => {
@@ -121,54 +142,62 @@ app.post('/api/food/:id/rating', rateLimitVotes, clientId, knownFood, (req, res)
   res.json(summary(req.food.id, req.clientId));
 });
 
-app.post('/api/food/:id/comments', commentLimit, clientId, knownFood, (req, res) => {
+// A comment can have text, a photo, or both. Sent as multipart form data.
+app.post('/api/food/:id/comments', commentLimit, clientId, knownFood, (req, res, next) => {
+  upload.single('photo')(req, res, (err) => {
+    if (err) return res.status(400).json({ error: err.code === 'LIMIT_FILE_SIZE' ? 'Image must be under 8 MB' : 'Upload failed' });
+    if (!req.file) return next();
+    if (q.photoTotal.get().n >= MAX_PHOTOS) return res.status(507).json({ error: 'Photo storage is full right now' });
+    photoLimit(req, res, next);
+  });
+}, async (req, res) => {
   const body = String(req.body?.body || '').trim();
   const author = String(req.body?.author || '').trim().slice(0, 40) || 'Anonymous Terp';
-  if (!body || body.length > 500) return res.status(400).json({ error: 'Comment must be 1-500 characters' });
-  q.addComment.run(req.food.id, req.clientId, author, body, req.ipHash);
-  res.status(201).json({ comments: publicComments(req.food.id) });
-});
+  if (body.length > 500) return res.status(400).json({ error: 'Comment must be under 500 characters' });
+  if (!body && !req.file) return res.status(400).json({ error: 'Write something or add a photo' });
 
-app.post('/api/food/:id/photos', photoLimit, clientId, knownFood, (req, res) => {
-  if (q.photoTotal.get().n >= MAX_PHOTOS) return res.status(507).json({ error: 'Photo storage is full right now' });
-  upload.single('photo')(req, res, async (err) => {
-    if (err) return res.status(400).json({ error: err.code === 'LIMIT_FILE_SIZE' ? 'Image must be under 8 MB' : 'Upload failed' });
-    if (!req.file) return res.status(400).json({ error: 'Please choose an image' });
-
-    // Decode and re-encode: rejects anything that isn't really an image and drops EXIF/GPS metadata.
-    const filename = `${crypto.randomUUID()}.jpg`;
+  let photo = null;
+  if (req.file) {
     try {
-      await sharp(req.file.buffer, { limitInputPixels: 40_000_000, animated: false })
-        .rotate()
-        .resize(1600, 1600, { fit: 'inside', withoutEnlargement: true })
-        .jpeg({ quality: 80, mozjpeg: true })
-        .toFile(path.join(UPLOADS, filename));
+      photo = await savePhoto(req.file.buffer);
     } catch {
       return res.status(400).json({ error: 'That file is not a valid image' });
     }
-    q.addPhoto.run(req.food.id, req.clientId, filename, req.ipHash);
-    res.status(201).json({ photos: publicPhotos(req.food.id) });
-  });
+  }
+  q.addComment.run(req.food.id, req.clientId, author, body, photo, req.ipHash);
+  res.status(201).json({ comments: publicComments(req.food.id, req.clientId), ...summary(req.food.id, req.clientId) });
+});
+
+// Toggle an upvote. You can't upvote your own comment.
+app.post('/api/comments/:id/vote', upvoteLimit, clientId, (req, res) => {
+  const comment = q.getComment.get(Number(req.params.id));
+  if (!comment) return res.status(404).json({ error: 'Comment not found' });
+  if (comment.client_id === req.clientId) return res.status(400).json({ error: "You can't upvote your own comment" });
+
+  if (req.body?.up) {
+    if (!q.hasUpvote.get(comment.id, req.clientId) &&q.ipUpvotes.get(comment.id, req.ipHash).n >= MAX_VOTES_PER_NETWORK) {
+      return res.status(429).json({ error: 'Too many upvotes for this comment from your network' });
+    }
+    q.upvote.run(comment.id, req.clientId, req.ipHash);
+  } else {
+    q.unvote.run(comment.id, req.clientId);
+  }
+  res.json({ comments: publicComments(comment.food_id, req.clientId), ...summary(comment.food_id, req.clientId) });
 });
 
 // ---- Moderation (enabled only when ADMIN_PASSWORD is set) ----
 app.get('/api/admin/content', adminLimit, admin, (req, res) => {
-  res.json({
-    comments: q.recentComments.all(),
-    photos: q.recentPhotos.all().map((p) => ({ ...p, url: `/uploads/${p.filename}` })),
-  });
+  res.json({ comments: q.recentComments.all().map((c) => ({ ...c, photo: photoUrl(c.photo) })) });
 });
 
 app.delete('/api/admin/comments/:id', adminLimit, admin, (req, res) => {
-  const { changes } = q.deleteComment.run(Number(req.params.id));
-  res.status(changes ? 204 : 404).end();
-});
-
-app.delete('/api/admin/photos/:id', adminLimit, admin, (req, res) => {
-  const photo = q.getPhoto.get(Number(req.params.id));
-  if (!photo) return res.status(404).end();
-  fs.rm(path.join(UPLOADS, path.basename(photo.filename)), { force: true }, () => {});
-  q.deletePhoto.run(photo.id);
+  const comment = q.getComment.get(Number(req.params.id));
+  if (!comment) return res.status(404).end();
+  db.exec('BEGIN');
+  q.deleteCommentVotes.run(comment.id);
+  q.deleteComment.run(comment.id);
+  db.exec('COMMIT');
+  removePhotoFile(comment.photo);
   res.status(204).end();
 });
 

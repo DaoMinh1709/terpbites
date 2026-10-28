@@ -152,6 +152,7 @@ function renderFood(f) {
   const item = state.data.stations.flatMap((s) => s.items).find((i) => i.id === f.id);
   const tags = (item?.tags || []).map((t) => `<span class="tag ${isVeg(t) ? 'v' : ''}">${esc(shortTag(t))}</span>`).join('');
   $('#food-body').innerHTML = `
+    ${f.photo ? `<img class="hero" src="${esc(f.photo)}" alt="Photo of ${esc(f.name)}">` : ''}
     <h3>${esc(f.name)}</h3>
     <div class="tags">${tags}</div>
     ${item ? `<a class="label" href="${esc(item.labelUrl)}" target="_blank" rel="noopener">Nutrition facts ↗</a>` : ''}
@@ -162,22 +163,15 @@ function renderFood(f) {
     <div class="meta" id="avg">${f.count ? `Average ${f.avg} / 5 from ${f.count} rating${f.count > 1 ? 's' : ''}` : 'Be the first to rate this'}</div>
     <div class="msg" id="rate-msg"></div>
 
-    <div class="section-title">Photos</div>
-    <div class="gallery">${f.photos.length
-      ? f.photos.map((p) => `<a href="${esc(p.url)}" target="_blank"><img src="${esc(p.url)}" alt="Photo of ${esc(f.name)}"></a>`).join('')
-      : '<span class="meta">No photos yet.</span>'}</div>
-    <form class="upload" id="photo-form">
-      <input type="file" name="photo" accept="image/*" required>
-      <button class="btn">Upload</button><span class="msg" id="photo-msg"></span>
-    </form>
-
     <div class="section-title">Comments (${f.comments.length})</div>
     <form class="comment-form" id="comment-form">
       <input name="author" maxlength="40" placeholder="Your name (optional)">
-      <textarea name="body" maxlength="500" rows="2" placeholder="How was it?" required></textarea>
-      <div><button class="btn">Post comment</button> <span class="msg" id="comment-msg"></span></div>
+      <textarea name="body" maxlength="500" rows="2" placeholder="How was it?"></textarea>
+      <label class="photo-pick">📷 Add a photo (optional) <input type="file" name="photo" accept="image/*"></label>
+      <div><button class="btn">Post</button> <span class="msg" id="comment-msg"></span></div>
     </form>
-    <div>${f.comments.map((c) => `<div class="comment"><b>${esc(c.author)}</b> <span class="tag" title="Same tag = same device">#${esc(c.tag)}</span><time>${esc(new Date(c.created_at + 'Z').toLocaleString())}</time><p>${esc(c.body)}</p></div>`).join('')}</div>`;
+    <p class="meta">The photo from the most-upvoted comment becomes this dish's picture.</p>
+    <div id="comments">${f.comments.map((c) => commentHtml(c, f)).join('')}</div>`;
 
   const body = $('#food-body');
   body.querySelectorAll('.rate button').forEach((b) => b.onclick = async () => {
@@ -190,31 +184,47 @@ function renderFood(f) {
     } catch (err) { $('#rate-msg').textContent = err.message; }
   });
 
-  $('#photo-form').onsubmit = async (e) => {
-    e.preventDefault();
-    const btn = e.target.querySelector('button');
-    btn.disabled = true;
-    try {
-      const r = await api(`/api/food/${f.id}/photos`, { method: 'POST', body: new FormData(e.target) });
-      f.photos = r.photos;
-      f.photo = r.photos[0]?.url;
-      afterChange(f);
-    } catch (err) { $('#photo-msg').textContent = err.message; btn.disabled = false; }
-  };
-
   $('#comment-form').onsubmit = async (e) => {
     e.preventDefault();
     const fd = new FormData(e.target);
+    if (!fd.get('photo')?.size) fd.delete('photo');
+    if (!String(fd.get('body')).trim() && !fd.has('photo')) {
+      $('#comment-msg').textContent = 'Write something or add a photo';
+      return;
+    }
+    const btn = e.target.querySelector('button');
+    btn.disabled = true;
     try {
-      const r = await api(`/api/food/${f.id}/comments`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ author: fd.get('author'), body: fd.get('body') }),
-      });
-      f.comments = r.comments;
-      f.commentCount = r.comments.length;
+      const r = await api(`/api/food/${f.id}/comments`, { method: 'POST', body: fd });
+      Object.assign(f, r);
       afterChange(f);
-    } catch (err) { $('#comment-msg').textContent = err.message; }
+    } catch (err) { $('#comment-msg').textContent = err.message; btn.disabled = false; }
   };
+
+  $('#comments').querySelectorAll('.upvote').forEach((b) => b.onclick = async () => {
+    const c = f.comments.find((x) => x.id === Number(b.dataset.id));
+    try {
+      const r = await api(`/api/comments/${c.id}/vote`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ up: !c.myVote }),
+      });
+      Object.assign(f, r);
+      afterChange(f);
+    } catch (err) { b.closest('.comment').querySelector('.msg').textContent = err.message; }
+  });
+}
+
+function commentHtml(c, f) {
+  const isProfile = c.photo && c.photo === f.photo;
+  return `<div class="comment">
+    <div class="comment-head">
+      <div><b>${esc(c.author)}</b> <span class="tag" title="Same tag = same device">#${esc(c.tag)}</span><time>${esc(new Date(c.created_at + 'Z').toLocaleString())}</time></div>
+      <button class="upvote ${c.myVote ? 'on' : ''}" data-id="${c.id}" ${c.mine ? 'disabled title="Your comment"' : ''} aria-label="Upvote">▲ ${c.votes}</button>
+    </div>
+    ${c.body ? `<p>${esc(c.body)}</p>` : ''}
+    ${c.photo ? `<a href="${esc(c.photo)}" target="_blank"><img class="comment-photo" src="${esc(c.photo)}" alt="Photo of ${esc(f.name)}"></a>` : ''}
+    ${isProfile ? '<span class="tag v">⭐ Dish picture</span>' : ''}
+    <div class="msg"></div>
+  </div>`;
 }
 
 // Re-render the dialog and refresh the matching card(s) in the menu.

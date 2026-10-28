@@ -14,24 +14,20 @@ async function adminApi(url, opts = {}) {
 
 async function load() {
   try {
-    const { comments, photos } = await adminApi('/api/admin/content');
+    const { comments } = await adminApi('/api/admin/content');
     try { sessionStorage.setItem('terpbites-admin', password); } catch {}
     $('#login').hidden = true;
     $('#content').hidden = false;
 
-    $('#photos').innerHTML = photos.map((p) => `
-      <figure><a href="${esc(p.url)}" target="_blank"><img src="${esc(p.url)}" alt=""></a>
-        <figcaption>${esc(p.food)}<br><span class="meta">${esc(p.created_at)}</span></figcaption>
-        <button class="btn" data-photo="${p.id}">Delete</button></figure>`).join('') || '<p class="meta">No photos.</p>';
-
     $('#comments').innerHTML = comments.map((c) => `
-      <div class="comment"><b>${esc(c.author)}</b> on ${esc(c.food)}<time>${esc(c.created_at)}</time>
-        <p>${esc(c.body)}</p><button class="btn" data-comment="${c.id}">Delete</button></div>`).join('') || '<p class="meta">No comments.</p>';
+      <div class="comment"><b>${esc(c.author)}</b> on ${esc(c.food)}<time>${esc(c.created_at)}</time> <span class="meta">▲ ${c.votes}</span>
+        ${c.body ? `<p>${esc(c.body)}</p>` : ''}
+        ${c.photo ? `<a href="${esc(c.photo)}" target="_blank"><img class="comment-photo" src="${esc(c.photo)}" alt=""></a>` : ''}
+        <button class="btn" data-comment="${c.id}">Delete${c.photo ? ' comment + photo' : ''}</button></div>`).join('') || '<p class="meta">No comments.</p>';
 
-    document.querySelectorAll('[data-photo], [data-comment]').forEach((b) => b.onclick = async () => {
+    document.querySelectorAll('[data-comment]').forEach((b) => b.onclick = async () => {
       if (!confirm('Delete this permanently?')) return;
-      const kind = b.dataset.photo ? 'photos' : 'comments';
-      await adminApi(`/api/admin/${kind}/${b.dataset.photo || b.dataset.comment}`, { method: 'DELETE' });
+      await adminApi(`/api/admin/comments/${b.dataset.comment}`, { method: 'DELETE' });
       load();
     });
   } catch (e) {
