@@ -36,6 +36,11 @@ async function init() {
   renderHalls();
   loadMenu();
   $('#search').addEventListener('input', renderMenu);
+  try { $('#sort').value = localStorage.getItem('terpbites-sort') || 'station'; } catch {}
+  $('#sort').addEventListener('change', () => {
+    try { localStorage.setItem('terpbites-sort', $('#sort').value); } catch {}
+    renderMenu();
+  });
 }
 
 function renderHalls() {
@@ -75,13 +80,37 @@ function renderNow() {
   $('#meals').querySelectorAll('button').forEach((b) => b.onclick = () => { state.meal = b.dataset.m; loadMenu(); });
 }
 
+// Unrated items always go last, whichever direction ratings are sorted.
+function byRating(dir) {
+  return (a, b) => {
+    if (!a.count || !b.count) return (b.count ? 1 : 0) - (a.count ? 1 : 0);
+    return dir * (b.avg - a.avg) || b.count - a.count || a.name.localeCompare(b.name);
+  };
+}
+
 function renderMenu() {
+  if (!state.data) return;
   const term = $('#search').value.trim().toLowerCase();
-  const html = state.data.stations.map((st) => {
-    const items = st.items.filter((i) => !term || i.name.toLowerCase().includes(term));
-    if (!items.length) return '';
-    return `<section class="station"><h2>${esc(st.name)}</h2><div class="items">${items.map(itemCard).join('')}</div></section>`;
-  }).join('');
+  const sort = $('#sort').value;
+  const match = (i) => !term || i.name.toLowerCase().includes(term);
+  let html;
+
+  if (sort.startsWith('rating')) {
+    const items = state.data.stations
+      .flatMap((st) => st.items.map((i) => ({ ...i, station: st.name })))
+      .filter(match)
+      .sort(byRating(sort === 'rating-desc' ? 1 : -1));
+    html = items.length ? `<section class="station"><h2>All items by rating</h2><div class="items">${items.map(itemCard).join('')}</div></section>` : '';
+  } else {
+    const stations = sort === 'station-az'
+      ? [...state.data.stations].sort((a, b) => a.name.localeCompare(b.name))
+      : state.data.stations;
+    html = stations.map((st) => {
+      const items = st.items.filter(match);
+      if (!items.length) return '';
+      return `<section class="station"><h2>${esc(st.name)}</h2><div class="items">${items.map(itemCard).join('')}</div></section>`;
+    }).join('');
+  }
   $('#menu').innerHTML = html || '<div class="empty">Nothing on the menu here right now.</div>';
   $('#menu').querySelectorAll('.item').forEach((b) => b.onclick = () => openFood(b.dataset.id));
 }
@@ -93,6 +122,7 @@ function itemCard(i) {
   const tags = i.tags.map((t) => `<span class="tag ${isVeg(t) ? 'v' : ''}">${esc(shortTag(t))}</span>`).join('');
   return `<button class="item" data-id="${esc(i.id)}">${thumb}<div>
     <div class="name">${esc(i.name)}</div>
+    ${i.station ? `<div class="station-name">${esc(i.station)}</div>` : ''}
     <div class="meta">${rating}${comments}</div>
     <div class="tags">${tags}</div></div></button>`;
 }

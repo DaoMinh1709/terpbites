@@ -29,7 +29,10 @@ main { max-width: 960px; margin: 0 auto; padding: 16px; }
 .meals { display: flex; gap: 6px; margin: 10px 0; flex-wrap: wrap; }
 .meals button { border: 1px solid var(--line); background: var(--card); color: var(--text); padding: 6px 14px; border-radius: 99px; }
 .meals button.active { background: var(--text); color: var(--bg); border-color: var(--text); }
-.search { width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--text); }
+.toolbar { display: flex; gap: 8px; flex-wrap: wrap; }
+.search { flex: 1 1 200px; min-width: 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--text); }
+.sort { flex: 0 1 auto; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--text); font: inherit; }
+.station-name { font-size: 12px; color: var(--muted); }
 
 .station h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); margin: 22px 0 8px; }
 .items { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }

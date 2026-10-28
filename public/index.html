@@ -16,7 +16,15 @@
     <section class="now">
       <div id="now-text" class="now-text">Loading…</div>
       <div id="meals" class="meals"></div>
-      <input id="search" class="search" type="search" placeholder="Search this menu…">
+      <div class="toolbar">
+        <input id="search" class="search" type="search" placeholder="Search this menu…">
+        <select id="sort" class="sort" aria-label="Sort by">
+          <option value="station">Sort: By station</option>
+          <option value="station-az">Sort: Station A–Z</option>
+          <option value="rating-desc">Sort: Rating high → low</option>
+          <option value="rating-asc">Sort: Rating low → high</option>
+        </select>
+      </div>
     </section>
     <div id="menu" class="menu"></div>
   </main>
