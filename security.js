@@ -1,9 +1,8 @@
 // Signing, hashing and admin checks. The secret lives in .secret (gitignored) unless SESSION_SECRET is set.
 const crypto = require('crypto');
 const fs = require('fs');
-const path = require('path');
 
-const SECRET_FILE = path.join(__dirname, '.secret');
+const { SECRET_FILE } = require('./paths');
 
 function loadSecret() {
   if (process.env.SESSION_SECRET) return process.env.SESSION_SECRET;

@@ -36,6 +36,20 @@ scraped live from https://nutrition.umd.edu. Students can rate each food 1–5 s
 | `ADMIN_PASSWORD` | Enables `/admin.html` for deleting comments and photos. Admin is off if unset. |
 | `SESSION_SECRET` | Key for signing device ids. If unset, one is generated into `.secret` (gitignored). |
 | `TRUST_PROXY` | Set to `1` when hosted behind a proxy (Render, Railway, nginx…) so rate limits see real IPs. |
-| `PORT` | Port to listen on (default 3000). |
+| `PORT` | Port to listen on (default 3000). Hosts usually set this for you. |
+| `DATA_DIR` | Folder for `data.db`, `uploads/` and `.secret`. Point it at a persistent volume when hosted. |
+
+## Deploy (Railway)
+
+The app keeps its data on disk (SQLite + photos), so the host needs a **persistent volume**;
+free tiers without one wipe everything on each redeploy.
+
+1. Sign in at railway.com with GitHub → **New Project → Deploy from GitHub repo** → pick `terpbites`.
+2. On the service: **Add Volume**, mount path `/data`.
+3. **Variables**: `DATA_DIR=/data`, `TRUST_PROXY=1`, `ADMIN_PASSWORD=<long password>`,
+   `SESSION_SECRET=<random string>` (e.g. `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`).
+4. **Settings → Networking → Generate Domain** to get a public `https://…up.railway.app` URL.
+
+Every push to `main` redeploys automatically. Render or Fly.io work the same way (web service + disk mounted at `/data`).
 
 Serve it over HTTPS in production (most hosts do this for you).

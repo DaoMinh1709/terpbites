@@ -5,3 +5,4 @@ uploads/*
 .claude/
 .secret
 .env
+data/

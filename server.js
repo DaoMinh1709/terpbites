@@ -12,7 +12,7 @@ const { issueClientId, verifyClientId, ipHash, authorTag, isAdmin } = require('.
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const UPLOADS = path.join(__dirname, 'uploads');
+const { UPLOADS } = require('./paths');
 const MAX_PHOTOS = 5000; // ~2 GB of disk at the re-encoded size
 const MAX_VOTES_PER_NETWORK = 5; // per food, so a whole dorm on one IP can still vote
 
