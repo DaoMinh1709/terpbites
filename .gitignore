@@ -3,3 +3,5 @@ data.db
 uploads/*
 !uploads/.gitkeep
 .claude/
+.secret
+.env

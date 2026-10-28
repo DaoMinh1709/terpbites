@@ -17,4 +17,25 @@ scraped live from https://nutrition.umd.edu. Students can rate each food 1–5 s
 - `db.js` – SQLite (built into Node 22+) in `data.db`. Photos are saved to `uploads/` (images only, max 5 MB).
 - `public/` – the frontend (plain HTML/CSS/JS).
 
-Votes are one per device per food (an anonymous id kept in the browser) — there is no login yet.
+## Security
+
+- **Device ids are signed by the server** (`/api/session`), so made-up ids are rejected. New ids are rate limited per IP,
+  and each network (IP) can cast at most 5 votes per dish. There is still no login, so this limits vote stuffing rather
+  than making it impossible.
+- **Rate limits** on all API calls, plus tighter ones for ratings, comments and uploads.
+- **Uploads are decoded and re-encoded** with sharp: non-images are rejected, photos are resized to max 1600px, and
+  EXIF/GPS metadata is stripped. Total photos are capped at 5000.
+- **Security headers** via helmet (CSP, nosniff, clickjacking protection); errors never include stack traces.
+- **Menu dates** are limited to yesterday through a week ahead, and the menu cache is size-capped.
+- Comment names show a short `#tag` tied to the device, so people can't easily pass as each other.
+
+### Environment variables
+
+| Variable | Purpose |
+|---|---|
+| `ADMIN_PASSWORD` | Enables `/admin.html` for deleting comments and photos. Admin is off if unset. |
+| `SESSION_SECRET` | Key for signing device ids. If unset, one is generated into `.secret` (gitignored). |
+| `TRUST_PROXY` | Set to `1` when hosted behind a proxy (Render, Railway, nginx…) so rate limits see real IPs. |
+| `PORT` | Port to listen on (default 3000). |
+
+Serve it over HTTPS in production (most hosts do this for you).

@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>TerpBites Admin</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand">TerpBites Admin <span>Remove comments and photos</span></div>
+    <div class="halls"></div>
+  </header>
+  <main>
+    <form id="login" class="toolbar">
+      <input id="password" class="search" type="password" placeholder="Admin password" autocomplete="current-password" required>
+      <button class="btn">Sign in</button>
+      <span id="login-msg" class="msg"></span>
+    </form>
+    <div id="content" hidden>
+      <section class="station"><h2>Recent photos</h2><div id="photos" class="admin-photos"></div></section>
+      <section class="station"><h2>Recent comments</h2><div id="comments"></div></section>
+    </div>
+  </main>
+  <script src="admin.js"></script>
+</body>
+</html>

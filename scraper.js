@@ -29,6 +29,7 @@ const MEAL_HOURS = {
 };
 
 const CACHE_MS = 30 * 60 * 1000;
+const CACHE_MAX = 60; // 3 halls x ~9 allowed dates fits comfortably
 const cache = new Map();
 
 // Current date/time in Eastern, regardless of the server's timezone.
@@ -85,8 +86,16 @@ async function getMenu(hallId, date) {
   const res = await fetch(url, { headers: { 'User-Agent': 'TerpBites student menu app' } });
   if (!res.ok) throw new Error(`UMD site returned ${res.status}`);
   const meals = parseMenu(await res.text());
+  cache.delete(key);
   cache.set(key, { at: Date.now(), meals });
+  if (cache.size > CACHE_MAX) cache.delete(cache.keys().next().value); // drop the oldest
   return meals;
+}
+
+// Only yesterday through a week ahead can be requested, so callers can't make us hammer the UMD site.
+function isAllowedDate(date) {
+  for (let offset = -1; offset <= 7; offset++) if (easternNow(offset).date === date) return true;
+  return false;
 }
 
 // Picks the meal being served now; if between meals, the next one ("upcoming").
@@ -104,4 +113,4 @@ async function currentMeal(hallId, now = easternNow()) {
   return { date: tomorrow, meal: next[0]?.name, status: 'upcoming' };
 }
 
-module.exports = { HALLS, MEAL_HOURS, getMenu, currentMeal, easternNow };
+module.exports = { HALLS, MEAL_HOURS, getMenu, currentMeal, easternNow, isAllowedDate };

@@ -1,23 +1,31 @@
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-function getClientId() {
-  try {
-    let id = localStorage.getItem('terpbites-id');
-    if (!id) localStorage.setItem('terpbites-id', (id = crypto.randomUUID()));
-    return id;
-  } catch {
-    return (window._cid ||= crypto.randomUUID());
-  }
-}
-const CLIENT_ID = getClientId();
+// The server issues a signed device id; we keep it so votes stay tied to this browser.
+const TOKEN_KEY = 'terpbites-token';
+let clientId = null;
+try { clientId = localStorage.getItem(TOKEN_KEY); } catch {}
 
-async function api(url, opts = {}) {
+async function newClientId() {
+  const res = await fetch('/api/session', { method: 'POST' });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || 'Could not start a session');
+  clientId = data.clientId;
+  try { localStorage.setItem(TOKEN_KEY, clientId); } catch {}
+}
+
+async function api(url, opts = {}, retried = false) {
   let res;
   try {
-    res = await fetch(url, { ...opts, headers: { 'X-Client-Id': CLIENT_ID, ...(opts.headers || {}) } });
-  } catch {
-    throw new Error("Can't reach the TerpBites server. Is it running? (npm start)");
+    if (!clientId) await newClientId();
+    res = await fetch(url, { ...opts, headers: { 'X-Client-Id': clientId, ...(opts.headers || {}) } });
+  } catch (e) {
+    if (e instanceof TypeError) throw new Error("Can't reach the TerpBites server. Is it running? (npm start)");
+    throw e;
+  }
+  if (res.status === 401 && !retried) {
+    clientId = null;
+    return api(url, opts, true);
   }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || 'Something went wrong');
@@ -31,6 +39,7 @@ const isVeg = (t) => /vegan|vegetarian/i.test(t);
 const shortTag = (t) => t.replace(/^Contains /i, '');
 
 async function init() {
+  try { localStorage.removeItem('terpbites-id'); } catch {} // old unsigned id
   state.halls = await api('/api/halls');
   state.hall = localStorage.getItem('terpbites-hall') || state.halls[0].id;
   renderHalls();
@@ -151,13 +160,14 @@ function renderFood(f) {
     <div class="rate">${[1, 2, 3, 4, 5].map((n) =>
       `<button data-n="${n}" class="${n <= (f.myRating || 0) ? 'on' : ''}" aria-label="${n} star">★</button>`).join('')}</div>
     <div class="meta" id="avg">${f.count ? `Average ${f.avg} / 5 from ${f.count} rating${f.count > 1 ? 's' : ''}` : 'Be the first to rate this'}</div>
+    <div class="msg" id="rate-msg"></div>
 
     <div class="section-title">Photos</div>
     <div class="gallery">${f.photos.length
       ? f.photos.map((p) => `<a href="${esc(p.url)}" target="_blank"><img src="${esc(p.url)}" alt="Photo of ${esc(f.name)}"></a>`).join('')
       : '<span class="meta">No photos yet.</span>'}</div>
     <form class="upload" id="photo-form">
-      <input type="file" name="photo" accept="image/jpeg,image/png,image/webp,image/gif" required>
+      <input type="file" name="photo" accept="image/*" required>
       <button class="btn">Upload</button><span class="msg" id="photo-msg"></span>
     </form>
 
@@ -167,15 +177,17 @@ function renderFood(f) {
       <textarea name="body" maxlength="500" rows="2" placeholder="How was it?" required></textarea>
       <div><button class="btn">Post comment</button> <span class="msg" id="comment-msg"></span></div>
     </form>
-    <div>${f.comments.map((c) => `<div class="comment"><b>${esc(c.author)}</b><time>${esc(new Date(c.created_at + 'Z').toLocaleString())}</time><p>${esc(c.body)}</p></div>`).join('')}</div>`;
+    <div>${f.comments.map((c) => `<div class="comment"><b>${esc(c.author)}</b> <span class="tag" title="Same tag = same device">#${esc(c.tag)}</span><time>${esc(new Date(c.created_at + 'Z').toLocaleString())}</time><p>${esc(c.body)}</p></div>`).join('')}</div>`;
 
   const body = $('#food-body');
   body.querySelectorAll('.rate button').forEach((b) => b.onclick = async () => {
-    const s = await api(`/api/food/${f.id}/rating`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ stars: Number(b.dataset.n) }),
-    });
-    Object.assign(f, s);
-    afterChange(f);
+    try {
+      const s = await api(`/api/food/${f.id}/rating`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ stars: Number(b.dataset.n) }),
+      });
+      Object.assign(f, s);
+      afterChange(f);
+    } catch (err) { $('#rate-msg').textContent = err.message; }
   });
 
   $('#photo-form').onsubmit = async (e) => {
