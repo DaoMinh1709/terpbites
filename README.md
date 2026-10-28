@@ -10,7 +10,8 @@ scraped live from https://nutrition.umd.edu. Students can rate each food 1–5 s
 
 ## How it works
 - `scraper.js` – fetches `nutrition.umd.edu/?locationNum=<hall>&dtdate=<M/D/YYYY>`, parses meals → stations → items
-  (cached 30 min). Picks the current meal using Eastern time and `MEAL_HOURS` (approximate — edit to match real hours).
+  (cached 30 min). Picks the current meal using Eastern time and each hall's hours in `MEAL_HOURS`
+  (from dining.umd.edu, Fall 2025 — weekends are Brunch + Dinner at South Campus and Yahentamitsi).
   After dinner it shows tomorrow's first meal as "Up next".
 - `server.js` – Express API. Foods are keyed by UMD's recipe number, so ratings carry over whenever a dish reappears.
 - `db.js` – SQLite (built into Node 22+) in `data.db`. Photos are saved to `uploads/` (images only, max 5 MB).

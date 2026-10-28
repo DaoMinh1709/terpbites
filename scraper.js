@@ -10,13 +10,22 @@ const HALLS = [
   { id: '51', name: '251 North' },
 ];
 
-// Approximate serving windows in minutes after midnight (Eastern time).
-// Real hours vary by hall and semester; adjust here if needed.
+// Serving windows in minutes after midnight (Eastern), per hall and day of week (0 = Sunday).
+// Source: dining.umd.edu/hours/dining-halls (Fall 2025). Update here when hours change.
+const t = (h, m = 0) => h * 60 + m;
+
+const SOUTH_HILL_HOURS = (day) => (day === 0 || day === 6
+  ? { Brunch: [t(10), t(16)], Dinner: [t(16), t(21)] }
+  : { Breakfast: [t(7), t(10, 30)], Lunch: [t(10, 30), t(16)], Dinner: [t(16), t(21)] });
+
 const MEAL_HOURS = {
-  Breakfast: [7 * 60, 11 * 60],
-  Brunch: [10 * 60, 15 * 60],
-  Lunch: [11 * 60, 16 * 60],
-  Dinner: [16 * 60, 21 * 60],
+  '16': SOUTH_HILL_HOURS, // South Campus
+  '19': SOUTH_HILL_HOURS, // Yahentamitsi
+  '51': (day) => ({ // 251 North: open until 10 PM Mon-Thu, 7 PM Fri-Sun
+    Breakfast: [t(8), t(10, 30)],
+    Lunch: [t(10, 30), t(16)],
+    Dinner: [t(16), day >= 1 && day <= 4 ? t(22) : t(19)],
+  }),
 };
 
 const CACHE_MS = 30 * 60 * 1000;
@@ -28,11 +37,12 @@ function easternNow(offsetDays = 0) {
   const parts = Object.fromEntries(
     new Intl.DateTimeFormat('en-US', {
       timeZone: TZ, year: 'numeric', month: 'numeric', day: 'numeric',
-      hour: 'numeric', minute: 'numeric', hourCycle: 'h23',
+      hour: 'numeric', minute: 'numeric', hourCycle: 'h23', weekday: 'short',
     }).formatToParts(d).map((p) => [p.type, p.value])
   );
   return {
     date: `${parts.month}/${parts.day}/${parts.year}`,
+    weekday: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(parts.weekday),
     minutes: Number(parts.hour) * 60 + Number(parts.minute),
   };
 }
@@ -80,12 +90,11 @@ async function getMenu(hallId, date) {
 }
 
 // Picks the meal being served now; if between meals, the next one ("upcoming").
-async function currentMeal(hallId) {
-  const now = easternNow();
+async function currentMeal(hallId, now = easternNow()) {
   const meals = await getMenu(hallId, now.date);
-  const names = meals.map((m) => m.name);
-  for (const name of names) {
-    const [start, end] = MEAL_HOURS[name] || [0, 0];
+  const hours = MEAL_HOURS[hallId](now.weekday);
+  for (const { name } of meals) {
+    const [start, end] = hours[name] || [0, 0];
     if (now.minutes < start) return { date: now.date, meal: name, status: 'upcoming' };
     if (now.minutes < end) return { date: now.date, meal: name, status: 'open' };
   }
