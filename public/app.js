@@ -13,7 +13,12 @@ function getClientId() {
 const CLIENT_ID = getClientId();
 
 async function api(url, opts = {}) {
-  const res = await fetch(url, { ...opts, headers: { 'X-Client-Id': CLIENT_ID, ...(opts.headers || {}) } });
+  let res;
+  try {
+    res = await fetch(url, { ...opts, headers: { 'X-Client-Id': CLIENT_ID, ...(opts.headers || {}) } });
+  } catch {
+    throw new Error("Can't reach the TerpBites server. Is it running? (npm start)");
+  }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || 'Something went wrong');
   return data;
